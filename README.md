@@ -35,6 +35,25 @@ Parameters for normal running:
 Gridsearch values parameters:
 
 "max_counts_grid" change the array values to test which value of max_counts is optimal
+
 "weights_on_off_grid" tests whether it is optimal to add weights to infrequent words
+
 "also_weights_on_brands_grid" tests wheter it is optimal to add weights to brands
+
 "regex_functions_grids" here you can add various regex functions to test their performance
+
+# Code structure
+
+The code is seprated into destinct parts. I will now run through each part.
+
+1. Packages : self xplanatory, downloads the packages
+
+2. Control Room : As mentioned earlier this is where you can change parameters and turn off and on certain aspects
+
+3. Loading data : Data is loaded in (a json file) and converted to a data frame
+
+4. Functions Cleaning : Functions here are used to clean the dataset. This includes standardization, cleaning of text, identfying and extracting brands from titles, extracting brands, creation of a vocabulary, title reduction. Finally a function that can be run to apply all the cleaning steps.
+
+5. 
+
+6. 

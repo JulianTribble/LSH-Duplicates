@@ -64,4 +64,6 @@ The code is seprated into destinct parts. I will now run through each part.
 
 9. Clustering : Includes a function that runs the clustering function
 
-10. Running :
+10. Running : This combines all the previous stated code. Here is where results are formed and grids are created
+
+11. Grid Search: If grid search is turned on, the normal running part will not run and only the gridsearch part will be implemented.

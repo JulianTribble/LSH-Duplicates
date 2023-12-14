@@ -54,6 +54,14 @@ The code is seprated into destinct parts. I will now run through each part.
 
 4. Functions Cleaning : Functions here are used to clean the dataset. This includes standardization, cleaning of text, identfying and extracting brands from titles, extracting brands, creation of a vocabulary, title reduction. Finally a function that can be run to apply all the cleaning steps.
 
-5. 
+5. Functions: extra : These are extra functions, these include a jaccard similarity function, f1 measure calculator and a function for extracting all modeel words
 
-6. 
+6. Functions: Binary vector creation  : This is a single, quite extensive function, regarding the extraction of the binary vector as described in my paper.
+
+7. LSH model extracter : This part includes the MinHashing function, a function which calculates the bands and rows, creates LSH buckets, function that converts the LSH bucket format to a list of pairs, function that applies a blocking filter.
+
+8. Running and results LSH : Two functions that run all the LSH functions together (except the function that applies the blocking filter, that is applied in the clustering section) and a function that calculates the evaluation metrics for LSH.
+
+9. Clustering : Includes a function that runs the clustering function
+
+10. Running :

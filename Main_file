@@ -1,0 +1,704 @@
+## Packages
+
+# Packages
+import pandas as pd
+import re
+import numpy as np
+from collections import defaultdict
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+import warnings
+import random
+from IPython.display import HTML, display
+from fuzzywuzzy import process
+from collections import Counter
+import matplotlib.pyplot as plt
+import math
+from sklearn.cluster import AgglomerativeClustering
+from itertools import combinations
+from tqdm.notebook import tqdm
+
+# Things we can remove at the end
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_colwidth', None)
+warnings.filterwarnings('ignore')
+
+# Seed
+np.random.seed(42) 
+random.seed(42) 
+
+## Control Room
+
+#Control Room
+graph_creation = True
+save_results = True 
+Grid_search_on = False
+
+# Parameters to run and produce a graph
+n_values = [800, 900, 1000, 1100, 1200, 1300]
+max_counts = [500]
+weights_on_off = [True]
+also_weights_on_brands = [False]
+regex_functions = [r'\b[a-zA-Z]*\d+[a-zA-Z]*\d*\b']
+
+word_weight = 4
+epsilon = 0.2
+min_count = 2
+
+# Gridsearch values:
+max_counts_grid = [50, 100, 250, 500, 1000, 2000]
+weights_on_off_grid = [True, False]
+also_weights_on_brands_grid = [True, False]
+regex_functions_grid = [r'\b[a-zA-Z]*\d+[a-zA-Z]*\d*\b', 
+                      r'\b(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z\d]+|[a-zA-Z]+(?=.*\d)[^\s,]*|(?=.*[a-zA-Z])\d+[^\s,]*\b']
+
+#--------------------------------------------------------------------------
+tv_brands = [
+    "Acer Inc.", "Admiral", "Aiwa", "Akai", "Alba", "Amstrad", "Andrea Electronics",
+    "Apex Digital", "Apple Inc.", "Arcam", "Arise India", "AGA AB", "Audiovox",
+    "AWA", "Baird", "Bang & Olufsen", "Beko", "BenQ", "Binatone", "Blaupunkt",
+    "BPL Group", "Brionvega", "Bush", "Canadian General Electric (CGE)", "Changhong",
+    "ChiMei", "Compal Electronics", "Conar Instruments", "Continental Edison", "Cossor",
+    "Craig", "Coby", "Curtis Mathes Corporation", "Daewoo", "Dell", "Delmonico International Corporation",
+    "DuMont Laboratories", "Durabrand", "Dynatron", "English Electric", "English Electric Valve Company",
+    "EKCO", "Electrohome", "Element Electronics", "Emerson Electric", "EMI",
+    "Farnsworth", "Ferguson Electronics", "Ferranti", "Finlux (Vestel)", "Fisher Electronics",
+    "Fujitsu", "Funai", "Geloso", "General Electric", "General Electric Company",
+    "GoldStar", "Goodmans Industries", "Google", "Gradiente", "Grundig",
+    "Haier", "Hallicrafters", "Hannspree", "Heath Company/Heathkit", "Hinari Domestic Appliances",
+    "HMV", "Hisense", "Hitachi", "Hoffman Television (Cortron Ind)", "Itel",
+    "ITT Corporation", "Jensen Loudspeakers", "JVC", "Kenmore", "Kent Television",
+    "Kloss Video", "Kogan", "Kolster-Brandes", "Konka", "Lanix",
+    "Le.com", "LG Electronics", "Loewe", "Luxor", "Magnavox",
+    "Marantz", "Marconiphone", "Matsui", "Memorex", "Micromax",
+    "Metz", "Mitsubishi", "Mivar", "Motorola", "Muntz (Howard Radio)",
+    "Murphy Radio", "NEC", "Nokia", "Nordmende", "Onida",
+    "Orion (Hungary)", "Orion (Japan)", "Packard Bell, Teledyne Packard Bell", "Panasonic", "Pensonic",
+    "Philco (Philco-Ford)", "Philips", "Pioneer", "Planar Systems", "Polaroid",
+    "ProLine", "ProScan", "Pye", "Pyle USA", "Quasar",
+    "RadioShack", "Rauland-Borg", "RCA", "Realistic", "Rediffusion",
+    "SABA", "Salora", "Salora International", "Samsung", "Sansui",
+    "Sanyo", "Schneider Electric", "Seiki Digital", "Sèleco", "Setchell Carlson",
+    "Sharp", "Siemens", "Skyworth", "Sony", "Soyo",
+    "Stromberg-Carlson", "Supersonic", "Sylvania", "Tandy", "Tatung Company",
+    "TCL Corporation", "Technics", "TECO", "Teleavia", "Telefunken",
+    "Teletronics", "Thomson SA", "Thorn Electrical Industries", "Thorn EMI", "Toshiba",
+    "TPV Technology", "TP Vision", "Ultra", "United States Television Manufacturing Corp.", "Vestel",
+    "Videocon", "Videoton", "Vizio", "Vu Televisions", "Walton",
+    "Westinghouse Electric Corporation", "Westinghouse Electronics", "White-Westinghouse", "Xiaomi", "Zanussi",
+    "Zenith Radio", "Zonda", "LG", "ViewSonic", "Insignia", "Sceptre", "Pyle", "Optoma", "Dynex", "Naxa", "SunBriteTV"
+    , "Viore", "Elite", "TCL", "Westinghouse", "Avue",  "Venturer", "CurtisYoung", "Azend", "Contex", "Hiteker", "GPX"
+]
+
+## Loading data
+
+tv_df = pd.read_json('TVs-all-merged.json', orient='index')
+tv_df.columns = ['1st', '2nd', '3rd', '4th']
+rows = []
+index = []
+websiteList = ['amazon.com', 'newegg.com', 'bestbuy.com', 'thenerds.net']
+
+# Per website extraction
+for website in websiteList:
+    string_df = ['1st', '2nd', '3rd', '4th']
+    for st in string_df:
+        kboolean = tv_df[st].notnull()
+        for j, k in enumerate(kboolean):
+            if k:
+                string = kboolean.index[j]
+                if tv_df[st][string]['shop'] == website:
+                    index.append(tv_df[st][string]['modelID'])
+                    d1 = {"title": tv_df[st][string]['title']}
+                    d2 = tv_df[st][string]['featuresMap']
+                    dshop = {"shop": tv_df[st][string]['shop']}
+                    d3 = {**d1, **d2, **dshop}
+                    rows.append(d3)
+
+
+df_og = pd.DataFrame(rows, index=index)
+df_og.reset_index(drop=False, inplace=True)
+
+ground_truth_duplicates = set()
+
+for _, group in df_og.groupby('index'):
+    products = list(group.index)
+    if len(products) > 1:
+        for i in range(len(products)):
+            for j in range(i + 1, len(products)):
+                ground_truth_duplicates.add((products[i], products[j]))
+
+## Functions: Cleaning
+
+def clean_title(column):
+    text = column.lower()
+    
+    text = remove_shop(text, ['amazon.com', 'newegg.com', 'bestbuy.com', 'thenerds.net'])
+    
+    text = units_standardize(text)
+    text = text.replace('best','')
+    text = text.replace('buy','')
+    text = text.replace('(','').replace(')','')
+    text = text.replace('[','').replace(']','')
+    text = text.replace('-','').replace('/','')
+    text = text.replace('   ',' ').replace('  ',' ')
+    text = text.replace('','').replace(':','')
+    text = text.replace('lg electronics','lg')
+    text = text.replace('jvc tv','jvc')
+    text = text.replace('pansonic','panasonic')
+    text = text.replace(',','').replace('”','')
+    text = text.replace('–','').replace('thenerds.net','')
+    text = text.replace('newegg.com','').replace('bestbuy.com','')
+    text = text.replace('amazon.com','').replace('inc.','')
+    text = text.replace('+','').replace('&','')
+    text = text.replace(';','')
+
+    text = re.sub(r'(\d+(\.\d+)?)inch', lambda x: str(int(float(x.group(1)) + 0.5)) + 'inch', text)
+
+    text = re.sub(r'(\d+)\d{2}inch', lambda x: str(int(x.group(1)) + 1) + 'inch', text)
+
+    text = re.sub(r'(\b\d+(\.\d+)?)\s*[xX]\s*(\d+(\.\d+)?)\b', r'\1x\3', text)
+    
+    text = re.sub(r'(\d+)\s+(hz|inch|watt|lb)', r'\1\2', text)
+    
+    words_seen = set()
+    words = text.split()
+    cleaned_words = []
+    for word in words:
+        if word not in words_seen:
+            cleaned_words.append(word)
+            words_seen.add(word)
+        
+    return ' '.join(cleaned_words)
+
+def units_standardize(text):
+    text = re.sub(r'(\d+)\s*w\b', r'\1 watt', text)  # '100 w' -> '100 watt' for example
+    text = re.sub(r'(\d+)w\b', r'\1 watt', text) 
+    
+    hertz = ['Hertz', 'hertz', 'Hz', 'HZ', ' hz', '-hz', 'hz']
+    inches = ['Inch', 'inches', '"', '-inch', 'inch', 'inch', "'"]
+    pounds = ['lbs.', 'pounds']
+    lb = [r' lb', ' lbs.',' lb.',' pounds','pounds','lb','lbs.','lb.','lb']
+    watt = [r'watt','watt']
+    
+    for item in watt:
+        text = text.replace(item, 'watt ')
+    for item in lb:
+        text = text.replace(item, 'lb ')
+    for item in inches:
+        text = text.replace(item, 'inch ')
+    for item in hertz:
+        text = text.replace(item, 'hz ')
+    return text
+
+def identify_brand_in_title(title, cleaned_brands):
+    cleaned_title = clean_title(title)
+    for brand in cleaned_brands:
+        if brand in cleaned_title:
+            return brand
+    return None 
+
+def identify_brand(row, cleaned_tv_brands):
+    if pd.notna(row['Brand']) and row['Brand'].strip():
+        return row['Brand'].strip()
+    else:
+        return identify_brand_in_title(row['title'], cleaned_tv_brands)
+
+def remove_brands(df, brand_column, title_column):
+    for index, row in df.iterrows():
+        brand = row[brand_column].lower() 
+        title = row[title_column].lower() 
+        if brand in title:
+            cleaned_title = title.replace(brand, '').strip()
+            df.at[index, title_column] = cleaned_title
+    return df
+
+def remove_shop(title, shop_names):
+    for shop in shop_names:
+        shop_variations = [shop, shop.replace('.com', ''), shop.replace('.', '')]
+        if '.' in shop:
+            spaced_variation = ' '.join(shop.replace('.com', '').split('.'))
+            shop_variations.append(spaced_variation)
+
+        for variation in shop_variations:
+            title = re.sub(r'\b' + re.escape(variation) + r'\b', '', title)
+
+    return title.strip()
+
+def remove_words_by_frequency(df, vocabulary, min_count=2, max_count=None):
+    def filter_words(title):
+        return ' '.join([word for word in title.split() if min_count <= vocabulary[word] <= (max_count or vocabulary[word])])
+    df['title'] = df['title'].apply(filter_words)
+    
+
+def create_vocabulary(df):
+    vocabulary = Counter()
+    for title in df['title']:
+        words = title.split()
+        vocabulary.update(words)
+    return vocabulary
+
+def apply_cleaning(df, tv_brands):
+    # Apply the cleaning function to the list of TV brands
+    cleaned_tv_brands = [clean_title(brand) for brand in tv_brands]
+
+    # Apply the function to each title in the DataFrame
+    df['identified_brand'] = df.apply(lambda row: identify_brand(row, cleaned_tv_brands), axis=1)
+    df['identified_brand'] = df['identified_brand'].apply(clean_title)
+    unique_brands = df['identified_brand'].unique()
+
+    # Assuming 'title' is the column you want to clean
+    df['title'] = df['title'].apply(clean_title)
+
+    # Usage
+    df = remove_brands(df, 'identified_brand', 'title')
+    weighted_titles = df["title"].tolist()
+    # Create the vocabulary from the 'title' column
+    vocabulary = create_vocabulary(df)
+
+    df_bayesian = pd.DataFrame()
+    df_bayesian = df[['title', 'identified_brand', 'shop']].copy()
+
+    # Example usage
+    remove_words_by_frequency(df, vocabulary, min_count=min_count, max_count=max_count)
+    return df, vocabulary
+
+## Functions: extra
+
+def jaccard_similarity(set1, set2):
+    intersection = len(set1.intersection(set2))
+    union = len(set1.union(set2))
+    return intersection / union if union != 0 else 0
+
+def similarity_function(title1, title2, regex):
+    set1 = set(extract_model_words(title1, regex))
+    set2 = set(extract_model_words(title2, regex))
+    return jaccard_similarity(set1, set2)
+
+def extract_model_words(title, regex):
+    return set(re.findall(regex, title))
+
+def t_calculator(b, r):
+    t = (1/b)**(1/r)
+    return t
+
+def calculate_f1_measure(TP, FP, FN):
+    f1 = TP / (TP + (1/2)*(FP+FN))
+    return f1
+
+def is_true_pair(pair, df):
+    return df.loc[pair[0], 'index'] == df.loc[pair[1], 'index']
+
+def amount_of_true_pair(df):
+    ground_truth_duplicates = set()
+
+    for _, group in df.groupby('index'):
+        products = list(group.index)
+        if len(products) > 1:
+            for i in range(len(products)):
+                for j in range(i + 1, len(products)):
+                    ground_truth_duplicates.add((products[i], products[j]))
+                    
+    return len(ground_truth_duplicates)
+
+## Functions: Binary vector creation
+
+def create_binary_vectors(regex, df, vocabulary, apply_weighting, also_weight, weight=4):
+    binary_vectors = []
+    MW = set()
+
+    for i in range(len(df)):
+        title = df['title'][i]
+        identified_brand = df['identified_brand'][i]
+        model_words = extract_model_words(title, regex)
+
+        if also_weight:
+            for w in range(weight):
+                model_words.add(f"{identified_brand}_{w}")
+        else:
+            model_words.add(identified_brand)
+
+        for word, freq in vocabulary.items():
+            if 2 <= freq <= 5:
+                if apply_weighting:
+                    for w in range(weight):
+                        model_words.add(f"{word}_{w}")
+                else:
+                    model_words.add(word)
+
+        MW.update(model_words)
+
+    binary_vectors = []
+    for i in range(len(df)):
+        title = df['title'][i]
+        model_words = extract_model_words(title, regex)
+    
+        identified_brand = df['identified_brand'][i]
+        
+        if also_weight:
+            for w in range(weight):
+                model_words.add(f"{identified_brand}_{w}")
+        else:
+            model_words.add(identified_brand)
+        
+        title_words = set(title.split())
+        
+        for word in title_words:
+            if word not in model_words and 2 <= vocabulary.get(word, 0) <= 5:
+                if apply_weighting:
+                    for w in range(weight):
+                        model_words.add(f"{word}_{w}")
+                else:
+                    model_words.add(word)
+
+        binary_vector = [1 if mw in model_words else 0 for mw in MW]
+        binary_vectors.append(binary_vector)
+
+    return binary_vectors
+
+## LSH model extracter
+
+def create_minhash_signature(binary_vectors, n):
+    num_vectors = len(binary_vectors)
+    vector_length = len(binary_vectors[0]) if binary_vectors else 0
+    signature_matrix = np.full((n, num_vectors), np.inf)
+    for i in range(n):
+        permutation = np.random.permutation(vector_length)
+        for j, vector in enumerate(binary_vectors):
+            for row in permutation:
+                if vector[row] == 1:
+                    signature_matrix[i, j] = row
+                    break          
+    return signature_matrix
+
+def calculate_band_and_row_count(n, auto=True):
+    combinations = []
+    for b in range(1, n + 1):  
+        if n % b == 0:  
+            r = n // b  
+            combinations.append((b, r))
+    return combinations
+    
+def create_lsh_buckets(signature_matrix, b, r):
+    buckets = defaultdict(set)  
+    for band in range(b):
+        start_row, end_row = band * r, (band + 1) * r
+        for col in range(signature_matrix.shape[1]):
+            band_signature = tuple(signature_matrix[start_row:end_row, col])
+            bucket_key = ''.join(map(str, band_signature))
+            buckets[bucket_key].add(col)
+    return buckets
+
+def buckets_to_pairs(lsh_buckets):
+    candidate_pairs = defaultdict(list)
+    amount_cp = 0
+    seen_pairs = set()
+    for bucket_key, items in lsh_buckets.items():
+        items_list = list(items)
+        for i in range(len(items_list)):
+            for j in range(i + 1, len(items_list)):
+                pair = tuple(sorted((items_list[i], items_list[j])))
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    amount_cp += 1 # Important that this is before the block filter otherwise block filter will boost LSH results
+                    candidate_pairs[items_list[i]].append(items_list[j])
+                    candidate_pairs[items_list[j]].append(items_list[i])
+    return candidate_pairs, amount_cp
+
+def blocking_filter(lsh_buckets, df):
+    candidate_pairs_with_blocking_filter = defaultdict(list)
+    seen_pairs = set()
+    for bucket_key, items in lsh_buckets.items():
+        items_list = list(items)
+        for i in range(len(items_list)):
+            for j in range(i + 1, len(items_list)):
+                pair = tuple(sorted((items_list[i], items_list[j])))
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    if (df.loc[items_list[i], 'identified_brand'] == df.loc[items_list[j], 'identified_brand']) and (df.loc[items_list[i], 'shop'] != df.loc[items_list[j], 'shop']):
+                        candidate_pairs_with_blocking_filter[items_list[i]].append(items_list[j])
+                        candidate_pairs_with_blocking_filter[items_list[j]].append(items_list[i])
+    return candidate_pairs_with_blocking_filter
+
+## Running and results LSH
+
+def runLSH(signature_matrix, b, r):
+    lsh_buckets = create_lsh_buckets(signature_matrix, b, r)
+
+    similarity_threshold = t_calculator(b, r)
+
+    t = similarity_threshold
+
+    candidate_pairs, amount_cp = buckets_to_pairs(lsh_buckets)
+    
+    candidate_pairs_with_blocking_filter = blocking_filter(lsh_buckets, df)
+    
+    return candidate_pairs, amount_cp, candidate_pairs_with_blocking_filter
+
+def resultsLSH(candidate_pairs, amount_cp, count_pairs=399, total_combinations=1317876):
+    true_positives = 0
+    false_positives = 0
+    false_negatives = count_pairs
+
+    fraction_observation = amount_cp / total_combinations
+    
+    combinations_filtered_out = 1 - fraction_observation
+    percentage_filtered_out = combinations_filtered_out * 100
+    
+    unique_pairs_checked = set()
+
+    for item1, item2_list in candidate_pairs.items():
+        for item2 in item2_list:
+            if item1 == item2:
+                continue
+            pair = tuple(sorted((item1, item2)))
+            if pair not in unique_pairs_checked:
+                unique_pairs_checked.add(pair)
+                if df.loc[item1, 'index'] == df.loc[item2, 'index']:
+                    true_positives += 1
+                    false_negatives -= 1
+                else:
+                    false_positives += 1
+                    
+    pair_quality = true_positives / amount_cp if amount_cp > 0 else 0
+
+    pair_completeness = true_positives / count_pairs if amount_cp > 0 else 0
+
+    f1_star_measure = 2 * (pair_quality * pair_completeness) / (pair_quality + pair_completeness) if (pair_quality + pair_completeness) > 0 else 0
+    
+    return pair_quality, pair_completeness, f1_star_measure, fraction_observation
+
+## Clustering
+
+def jacsim(a, b, SignatureMatrix):
+    v1 = SignatureMatrix[:, a]
+    v2 = SignatureMatrix[:, b]
+    intersection = np.sum(np.logical_and(v1, v2))
+    union = np.sum(np.logical_or(v1, v2))
+    return intersection / union if union != 0 else 0
+
+def run_clustering(df, candidate_pairs, signature_matrix, epsilon):
+    candidate_pairs = set()
+    for key, values in candidate_pairs_with_blocking_filter.items():
+        for value in values:
+            candidate_pair = tuple(sorted([key, value]))
+            candidate_pairs.add(candidate_pair) 
+
+    num_products =  len(df)
+    DistanceMatrix = np.ones((num_products, num_products)) * 100000000000
+
+    for pair in candidate_pairs:  # Assuming 'candidates' contains relevant pairs
+        i, j = pair
+        DistanceMatrix[i][j] = 1 - jacsim(i, j, signature_matrix)
+
+    clustering = AgglomerativeClustering(affinity='precomputed', linkage='complete', 
+                                         distance_threshold=epsilon, n_clusters=None)
+
+    clustering_labels = clustering.fit_predict(DistanceMatrix)
+
+    bucketscl = defaultdict(list)
+    for item, cluster in enumerate(clustering_labels):
+        bucketscl[cluster].append(item)
+
+    bucketscl = {k: v for k, v in bucketscl.items() if len(v) >= 2}
+
+    # Create pairs from buckets
+    result = []
+    for bucket in bucketscl.values():
+        for comb in combinations(bucket, 2):
+            result.append(tuple(sorted(comb)))
+
+    pair_labels = {}
+    for i, cluster_id in enumerate(clustering_labels):
+        if cluster_id in pair_labels:
+            pair_labels[cluster_id].append(i)
+        else:
+            pair_labels[cluster_id] = [i]
+
+    actual_duplicates_in_candidates = set()
+    for pair in candidate_pairs: 
+        if df.loc[pair[0], 'index'] == df.loc[pair[1], 'index']:
+            actual_duplicates_in_candidates.add(pair)
+
+    matched_pairs = set()
+    for cluster_id, items in bucketscl.items():
+        for pair in combinations(items, 2):
+            if pair in candidate_pairs:
+                matched_pairs.add(pair)
+
+    TP = len(matched_pairs.intersection(actual_duplicates_in_candidates))
+    FP = len(matched_pairs) - TP
+    FN = len(actual_duplicates_in_candidates) - TP
+
+    f1 = calculate_f1_measure(TP, FP, FN)
+    
+    return TP, FP, FN, f1
+
+## Running 
+
+also_weight = also_weights_on_brands[0]
+regex = regex_functions[0]
+max_count = max_counts[0]
+weight_on = weights_on_off[0]
+
+results_data = pd.DataFrame(columns=[
+    'n', 't', 'b', 'r',
+    'pair_completeness', 'pair_quality', 'f1_star', 'f1', 'fraction_of_comparison'
+])
+
+if Grid_search_on:
+    print('Normal running skipped due to grid_search_on set to True')
+else:
+    for n in tqdm(n_values, desc='Overall Progress'):
+
+        df = df_og.copy()
+
+        #Begin bootstrap
+
+        df, vocabulary = apply_cleaning(df, tv_brands)
+
+        # Create binary vectors with weighted titles
+        binary_vectors = create_binary_vectors(regex, df, vocabulary, weight_on, also_weight, weight=word_weight)
+
+        # Create MinHash signature matrix
+        signature_matrix = create_minhash_signature(binary_vectors, n)
+
+        all_combinations = calculate_band_and_row_count(n, auto=False)
+
+        for b, r in all_combinations:
+
+            candidate_pairs, amount_cp, candidate_pairs_with_blocking_filter = runLSH(signature_matrix, b, r)
+
+            pair_quality, pair_completeness, f1_star_measure, fraction_observation = resultsLSH(candidate_pairs, amount_cp)
+
+            TP, FP, FN, f1 = run_clustering(df, candidate_pairs, signature_matrix, epsilon)   
+
+            results_data = results_data.append({
+                        'n': n, 'b': b, 'r': r,
+                        'pair_completeness': pair_completeness, 'pair_quality': pair_quality,
+                        'f1_star': f1_star_measure, 'f1': f1, 'fraction_of_comparison': fraction_observation
+                    }, ignore_index=True)
+
+    if save_results:
+        #determining the name of the file
+        file_name = 'n=5001300_new_method.xlsx'
+
+        # saving the excel
+        results_data.to_excel(file_name)
+        print('Results saved as an Excel File')
+
+
+    if graph_creation:
+        # Reading the data
+        df = results_data
+
+        plt.figure()
+        plt.grid(color='gray', linestyle='--', linewidth=0.5)
+        # Plot f1*
+        x = df['fraction_of_comparison']
+        y = df['f1_star']
+        plt.xlabel('Fraction of comparison')  
+        plt.ylabel('F1*')  
+
+        plt.title("F1* against fraction of comparisons") 
+        plt.plot(x, y, 'o', color= 'black', markersize=4)
+        if save_results:
+            plt.savefig('F1_star.png')
+
+        plt.figure()
+        plt.grid(color='gray', linestyle='--', linewidth=0.5)
+        # Plot f1
+        x = df['fraction_of_comparison']
+        y = df['f1']
+        plt.xlabel('Fraction of comparison')  
+        plt.ylabel('F1')  
+
+        plt.title("F1 against fraction of comparisons") 
+        plt.plot(x, y, 'o', color= 'black', markersize=4)
+        if save_results:
+            plt.savefig('F1.png')
+
+        plt.figure()
+        plt.grid(color='gray', linestyle='--', linewidth=0.5)
+        # Plot pair quality
+        x = df['fraction_of_comparison']
+        y = df['pair_quality']
+        plt.xlabel('Fraction of comparison')  
+        plt.ylabel('Pair Quality')  
+
+        plt.title("Pair Quality against fraction of comparisons") 
+        plt.plot(x, y, 'o', markersize=4, color= 'black')
+        if save_results:
+            plt.savefig('pair_quality.png')
+
+        plt.figure()
+        plt.grid(color='gray', linestyle='--', linewidth=0.5)
+        # Plot pair comparison
+        x = df['fraction_of_comparison']
+        y = df['pair_completeness']
+        plt.xlabel('Fraction of comparison')  
+        plt.ylabel('Pair Completeness')  
+
+        plt.title("Pair Completeness against fraction of comparisons") 
+        plt.plot(x, y, 'o', markersize=4, color= 'black')
+        if save_results:
+            plt.savefig('pair_completeness.png')
+
+## Grid search
+
+if Grid_search_on:
+    best_f1_star = 0
+    for also_weight in also_weights_on_brands_grid:
+        for regex in regex_functions_grid:
+            for max_count in max_counts_grid:
+                for weight_on in weights_on_off_grid: 
+                    results_data = pd.DataFrame(columns=[
+                        'n', 't', 'b', 'r',
+                        'pair_completeness', 'pair_quality', 'f1_star', 'f1', 'fraction_of_comparison'
+                    ])
+                    for n in tqdm(n_values, desc='Overall Progress'):
+
+                        df = df_og.copy()
+
+                        #Begin bootstrap
+
+                        df, vocabulary = apply_cleaning(df, tv_brands)
+
+                        # Create binary vectors with weighted titles
+                        binary_vectors = create_binary_vectors(regex, df, vocabulary, weight_on, also_weight, weight=word_weight)
+
+                        # Create MinHash signature matrix
+                        signature_matrix = create_minhash_signature(binary_vectors, n)
+
+                        all_combinations = calculate_band_and_row_count(n, auto=False)
+
+                        for b, r in all_combinations:
+
+                            candidate_pairs, amount_cp, candidate_pairs_with_blocking_filter = runLSH(signature_matrix, b, r)
+
+                            pair_quality, pair_completeness, f1_star_measure, fraction_observation = resultsLSH(candidate_pairs, amount_cp)
+
+                            TP, FP, FN, f1 = run_clustering(df, candidate_pairs, signature_matrix, epsilon)   
+
+                            results_data = results_data.append({
+                                        'n': n, 'b': b, 'r': r,
+                                        'pair_completeness': pair_completeness, 'pair_quality': pair_quality,
+                                        'f1_star': f1_star_measure, 'f1': f1, 'fraction_of_comparison': fraction_observation
+                                    }, ignore_index=True)
+
+                            if f1_star_measure > best_f1_star:
+                                best_f1_star = f1_star_measure
+                                print('------------------------------------------')
+                                print('LSH Metrics:')
+                                print(f"Best f1* {best_f1_star}")
+                                print(f"Best pair completeness: {pair_completeness}")
+                                print(f"Best pair quality: {pair_quality}")
+                                print(f"Best fraction of comparisons: {fraction_observation}")
+                                print('------------------------------------------')
+                                print('Hyper parameters:')
+                                print(f"Weights applied to key words: {weight_on}")
+                                print(f"Wegihts applied for brand: {also_weight}")
+                                print(f"The regex function: {regex}")
+                                print(f"Upper threshold word removal: {max_count}")
+                                print(f"Best bands: {b}")
+                                print(f"Best rows: {r}")
+                                print()

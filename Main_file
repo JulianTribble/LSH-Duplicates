@@ -580,7 +580,7 @@ else:
 
     if save_results:
         #determining the name of the file
-        file_name = 'n=5001300_new_method.xlsx'
+        file_name = 'results.xlsx'
 
         # saving the excel
         results_data.to_excel(file_name)
